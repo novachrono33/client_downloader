@@ -1,151 +1,147 @@
 import { useState } from 'react'
 import axios from 'axios'
 
-function App() {
+export default function App() {
   const [url, setUrl] = useState('')
-  const [resolution, setResolution] = useState('720')
-  const [format, setFormat] = useState('mp4')
-  const [progress, setProgress] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState('Скачать')
+  const [progress, setProgress] = useState(0)
+  const [cookies, setCookies] = useState('')
 
-  const handleDownload = async (e) => {
-    e.preventDefault()
-    if (!url) return
+  const download = async e => {
+  e.preventDefault()
+  setLoading(true)
+  setStatus('Загрузка...')
+  setProgress(0)
 
-    setLoading(true)
-    setProgress(0)
-
-    try {
-      const response = await axios.post(
-        'http://localhost:8000/download/',
-        { url, resolution: parseInt(resolution), format },
-        {
-          responseType: 'blob',
-          onDownloadProgress: (ev) => {
-            if (ev.total) {
-              setProgress(Math.round((ev.loaded * 100) / ev.total))
-            }
-          }
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL + '/download/';
+    
+    const response = await axios.post(
+      apiUrl,
+      { url, cookies },
+      {
+        responseType: 'blob',
+        timeout: 300000,
+        onDownloadProgress: progressEvent => {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total || 10000000)
+          )
+          setProgress(percent)
+          setStatus(`Загрузка: ${percent}%`)
         }
-      )
+      }
+    )
 
-      const blob = new Blob([response.data], { type: response.data.type })
+      const contentDisposition = response.headers['content-disposition'] || '';
+      const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+      let filename = 'track.mp3';
+      if (filenameMatch) {
+          // Декодируем URL-кодированное имя файла
+          filename = decodeURIComponent(filenameMatch[1]);
+      }
+
+      const blob = new Blob([response.data], { type: 'audio/mpeg' })
+      const downloadUrl = URL.createObjectURL(blob)
+      
       const link = document.createElement('a')
-      const filename = response.headers['content-disposition']
-        ?.split('filename=')[1]
-        ?.replace(/"/g, '') || `video.${format}`
-
-      link.href = URL.createObjectURL(blob)
+      link.href = downloadUrl
       link.download = filename
       document.body.appendChild(link)
       link.click()
-      link.remove()
+      
+      setTimeout(() => {
+        document.body.removeChild(link)
+        URL.revokeObjectURL(downloadUrl)
+      }, 100)
+
+      setStatus(`Сохранено: ${filename}`)
+      setProgress(100)
     } catch (err) {
-      console.error(err)
-      alert('Ошибка при скачивании. Проверь URL или настройки бэка.')
+      let errorMsg = 'Ошибка'
+      
+      if (err.response) {
+        if (err.response.data instanceof Blob) {
+          const text = await err.response.data.text()
+          try {
+            const json = JSON.parse(text)
+            errorMsg = json.detail || text
+          } catch {
+            errorMsg = text || `Ошибка ${err.response.status}`
+          }
+        } else {
+          errorMsg = err.response.data?.detail || `Ошибка ${err.response.status}`
+        }
+      } else if (err.code === 'ECONNABORTED') {
+        errorMsg = 'Таймаут соединения'
+      } else if (err.message.includes('Network')) {
+        errorMsg = 'Сетевая ошибка'
+      } else {
+        errorMsg = err.message || 'Неизвестная ошибка'
+      }
+      
+      setStatus(errorMsg)
+      setProgress(0)
+      alert(errorMsg)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-md-6">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <h1 className="card-title mb-4 text-center">YouTube Downloader</h1>
-              <form onSubmit={handleDownload}>
-                <div className="mb-3">
-                  <label className="form-label">Ссылка на видео</label>
-                  <input
-                    type="url"
-                    className="form-control"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="https://youtu.be/..."
-                    required
-                  />
-                </div>
-
-                <div className="mb-3">
-                  <label className="form-label">Разрешение</label>
-                  <select
-                    className="form-select"
-                    value={resolution}
-                    onChange={(e) => setResolution(e.target.value)}
-                  >
-                    <option value="240">240p</option>
-                    <option value="360">360p</option>
-                    <option value="480">480p</option>
-                    <option value="720">720p</option>
-                    <option value="1080">1080p</option>
-                  </select>
-                </div>
-
-                <fieldset className="mb-4">
-                  <legend className="col-form-label">Формат</legend>
-                  <div className="form-check form-check-inline">
-                    <input
-                      className="form-check-input"
-                      type="radio"
-                      name="format"
-                      id="fmtMp4"
-                      value="mp4"
-                      checked={format === 'mp4'}
-                      onChange={() => setFormat('mp4')}
-                    />
-                    <label className="form-check-label" htmlFor="fmtMp4">
-                      MP4
-                    </label>
-                  </div>
-                  <div className="form-check form-check-inline">
-                    <input
-                      className="form-check-input"
-                      type="radio"
-                      name="format"
-                      id="fmtMp3"
-                      value="mp3"
-                      checked={format === 'mp3'}
-                      onChange={() => setFormat('mp3')}
-                    />
-                    <label className="form-check-label" htmlFor="fmtMp3">
-                      MP3
-                    </label>
-                  </div>
-                </fieldset>
-
-                <button
-                  type="submit"
-                  className="btn btn-primary w-100"
-                  disabled={loading}
-                >
-                  {loading ? 'Скачиваем...' : 'Скачать'}
-                </button>
-
-                {loading && (
-                  <div className="mt-4">
-                    <div className="progress">
-                      <div
-                        className="progress-bar"
-                        role="progressbar"
-                        style={{ width: `${progress}%` }}
-                        aria-valuenow={progress}
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                      >
-                        {progress}%
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </form>
+    <div
+      className="d-flex justify-content-center align-items-center"
+      style={{ width: '100vw', height: '100vh', background: '#f8f9fa' }}
+    >
+      <div className="card p-4" style={{ width: '800px', maxWidth: '95%' }}>
+        <h3 className="mb-4 text-center">Yandex Music → MP3</h3>
+        <form onSubmit={download}>
+          <div className="mb-3">
+            <label className="form-label">Ссылка на трек</label>
+            <input
+              type="url"
+              className="form-control"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              placeholder="https://music.yandex.ru/track/..."
+              required
+            />
+            <div className="form-text">Пример: https://music.yandex.ru/track/12345678</div>
+          </div>
+          <div className="mb-3">
+            <label className="form-label">Cookies (необязательно)</label>
+            <textarea
+              className="form-control"
+              value={cookies}
+              onChange={e => setCookies(e.target.value)}
+              placeholder="Введите cookies для полных версий"
+              rows="2"
+            />
+            <div className="form-text">
+              Для скачивания полных версий требуется авторизация Яндекс.Музыки
             </div>
           </div>
-        </div>
+          <button type="submit" className="btn btn-primary w-100" disabled={loading}>
+            {status}
+          </button>
+          {loading && (
+            <div className="mt-3">
+              <div className="progress">
+                <div 
+                  className="progress-bar progress-bar-striped progress-bar-animated" 
+                  role="progressbar"
+                  style={{ width: `${progress}%` }}
+                  aria-valuenow={progress}
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  {progress}%
+                </div>
+              </div>
+            </div>
+          )}
+        </form>
       </div>
     </div>
   )
 }
-
-export default App
