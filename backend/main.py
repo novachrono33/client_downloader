@@ -6,10 +6,12 @@ import time
 import urllib.parse
 import logging
 import shutil
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, validator
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -17,12 +19,32 @@ logger = logging.getLogger(__name__)
 
 class DownloadRequest(BaseModel):
     url: str
-    cookies: str = None
-    quality: str = "192"  # Качество по умолчанию (битрейт в кбит/с)
-    format: str = "mp3"   # Формат по умолчанию
-    eq_preset: str = None # Пресет эквалайзера
-    volume: float = 1.0   # Уровень громкости (1.0 = 100%)
-    trim: str = None      # Обрезка трека (формат "start-end")
+    cookies: Optional[str] = None
+    quality: Optional[str] = "192"
+    format: Optional[str] = "mp3"
+    eq_preset: Optional[str] = None
+    volume: Optional[float] = 1.0
+    trim: Optional[str] = None
+
+    @validator('volume')
+    def validate_volume(cls, v):
+        if v is not None and (v < 0.1 or v > 5.0):
+            raise ValueError("Громкость должна быть между 0.1 и 5.0")
+        return v
+
+    @validator('quality')
+    def validate_quality(cls, v):
+        valid_qualities = ["64", "96", "128", "160", "192", "256", "320"]
+        if v not in valid_qualities:
+            raise ValueError(f"Недопустимое качество. Допустимые значения: {', '.join(valid_qualities)}")
+        return v
+
+    @validator('format')
+    def validate_format(cls, v):
+        valid_formats = ["mp3", "aac", "flac", "wav", "opus", "m4a"]
+        if v not in valid_formats:
+            raise ValueError(f"Недопустимый формат. Допустимые значения: {', '.join(valid_formats)}")
+        return v
 
 app = FastAPI()
 
@@ -34,6 +56,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Обработчик ошибок валидации
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Ошибка валидации: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": [{"msg": "Ошибка валидации", "errors": exc.errors()}]},
+    )
+
+# Обработчик общих исключений
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Необработанная ошибка: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
 
 def sanitize_filename(name: str) -> str:
     """Очищает имя файла от недопустимых символов"""
@@ -47,9 +87,11 @@ def convert_to_netscape_format(cookie_str: str) -> str:
     lines = ["# Netscape HTTP Cookie File"]
     for cookie in cookie_str.split('; '):
         if '=' in cookie:
-            name, value = cookie.split('=', 1)
-            # Формат: domain access_flag path secure_flag expiration name value
-            lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
+            parts = cookie.split('=', 1)
+            if len(parts) == 2:
+                name, value = parts
+                # Формат: domain access_flag path secure_flag expiration name value
+                lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
     return "\n".join(lines)
 
 def get_ffmpeg_args(req: DownloadRequest) -> list:
@@ -57,7 +99,7 @@ def get_ffmpeg_args(req: DownloadRequest) -> list:
     args = []
     
     # Настройка громкости
-    if req.volume != 1.0:
+    if req.volume and req.volume != 1.0:
         args.extend(["-af", f"volume={req.volume}"])
     
     # Настройки эквалайзера
@@ -74,9 +116,13 @@ def get_ffmpeg_args(req: DownloadRequest) -> list:
     if req.trim:
         try:
             start, end = req.trim.split("-")
-            args.extend(["-ss", start, "-to", end])
+            # Проверка формата времени
+            if re.match(r"^\d{1,2}:\d{2}$", start) and re.match(r"^\d{1,2}:\d{2}$", end):
+                args.extend(["-ss", start, "-to", end])
+            else:
+                logger.warning(f"Неверный формат времени для обрезки: {req.trim}")
         except Exception:
-            logger.warning(f"Invalid trim format: {req.trim}. Skipping.")
+            logger.warning(f"Ошибка при разборе параметра обрезки: {req.trim}")
     
     return args
 
@@ -132,6 +178,8 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
 
 @app.post("/download/")
 async def download(req: DownloadRequest):
+    logger.info(f"Получен запрос на скачивание: {req.url}")
+    
     # Проверка URL
     if "music.yandex." not in req.url:
         raise HTTPException(400, detail="Только ссылки Яндекс.Музыки")

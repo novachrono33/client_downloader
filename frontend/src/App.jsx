@@ -1,45 +1,53 @@
-import { useState } from 'react'
-import axios from 'axios'
+import { useState } from 'react';
+import axios from 'axios';
 
 export default function App() {
-  const [url, setUrl] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState('Скачать')
-  const [progress, setProgress] = useState(0)
-  const [cookies, setCookies] = useState('')
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('Скачать');
+  const [progress, setProgress] = useState(0);
+  const [cookies, setCookies] = useState('');
   
   // Настройки аудио
-  const [quality, setQuality] = useState('192')
-  const [format, setFormat] = useState('mp3')
-  const [eqPreset, setEqPreset] = useState('none')
-  const [volume, setVolume] = useState(1.0)
-  const [trimStart, setTrimStart] = useState('')
-  const [trimEnd, setTrimEnd] = useState('')
+  const [quality, setQuality] = useState('192');
+  const [format, setFormat] = useState('mp3');
+  const [eqPreset, setEqPreset] = useState('none');
+  const [volume, setVolume] = useState(1.0);
+  const [trimStart, setTrimStart] = useState('');
+  const [trimEnd, setTrimEnd] = useState('');
 
-  const download = async e => {
-    e.preventDefault()
-    setLoading(true)
-    setStatus('Загрузка...')
-    setProgress(0)
+  const download = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setStatus('Загрузка...');
+    setProgress(0);
 
     try {
       // Формируем параметр обрезки
-      const trim = trimStart && trimEnd ? `${trimStart}-${trimEnd}` : null
+      const trim = trimStart && trimEnd ? `${trimStart}-${trimEnd}` : null;
+      
+      // Проверка формата обрезки
+      if (trim && !/^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(trim)) {
+        throw new Error("Формат обрезки должен быть ММ:СС-ММ:СС (например: 00:15-00:30)");
+      }
       
       // Используем переменную окружения для URL
-      const apiUrl = import.meta.env.VITE_API_URL + '/download/'
+      const apiUrl = import.meta.env.VITE_API_URL + '/download/';
+      
+      // Формируем тело запроса
+      const requestBody = {
+        url, 
+        cookies: cookies || null,
+        quality,
+        format,
+        eq_preset: eqPreset === 'none' ? null : eqPreset,
+        volume: parseFloat(volume),
+        trim
+      };
       
       const response = await axios.post(
         apiUrl,
-        { 
-          url, 
-          cookies,
-          quality,
-          format,
-          eq_preset: eqPreset === 'none' ? null : eqPreset,
-          volume,
-          trim
-        },
+        requestBody,
         {
           responseType: 'blob',
           timeout: 300000,
@@ -51,66 +59,89 @@ export default function App() {
             setStatus(`Загрузка: ${percent}%`);
           }
         }
-      )
+      );
 
       // Получаем имя файла из заголовков
-      const contentDisposition = response.headers['content-disposition'] || ''
-      const filenameMatch = contentDisposition.match(/filename="(.+)"/)
-      let filename = 'track.mp3'
+      const contentDisposition = response.headers['content-disposition'] || '';
+      const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+      let filename = 'track.mp3';
       if (filenameMatch) {
           // Декодируем URL-кодированное имя файла
-          filename = decodeURIComponent(filenameMatch[1])
+          filename = decodeURIComponent(filenameMatch[1]);
       }
 
       // Создаем и скачиваем файл
-      const blob = new Blob([response.data], { type: 'audio/mpeg' })
-      const downloadUrl = URL.createObjectURL(blob)
+      const blob = new Blob([response.data], { type: response.headers['content-type'] || 'audio/mpeg' });
+      const downloadUrl = URL.createObjectURL(blob);
       
-      const link = document.createElement('a')
-      link.href = downloadUrl
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
       
       // Очистка
       setTimeout(() => {
-        document.body.removeChild(link)
-        URL.revokeObjectURL(downloadUrl)
-      }, 100)
+        document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+      }, 100);
 
-      setStatus(`Сохранено: ${filename}`)
-      setProgress(100)
+      setStatus(`Сохранено: ${filename}`);
+      setProgress(100);
     } catch (err) {
-      let errorMsg = 'Ошибка'
+      console.error("Ошибка скачивания:", err);
       
-      if (err.response) {
-        // Обработка ошибок сервера
-        if (err.response.data instanceof Blob) {
-          const text = await err.response.data.text()
-          try {
-            const json = JSON.parse(text)
-            errorMsg = json.detail || text
-          } catch {
-            errorMsg = text || `Ошибка ${err.response.status}`
+      let errorMsg = 'Ошибка';
+      let detailedMsg = '';
+      
+      // Обработка ошибок валидации (422)
+      if (err.response?.status === 422) {
+        detailedMsg = "Ошибка в параметрах запроса: ";
+        if (err.response.data?.detail) {
+          if (Array.isArray(err.response.data.detail)) {
+            detailedMsg += err.response.data.detail.map(d => d.msg).join(', ');
+          } else {
+            detailedMsg += JSON.stringify(err.response.data.detail);
           }
         } else {
-          errorMsg = err.response.data?.detail || `Ошибка ${err.response.status}`
+          detailedMsg += "Неверные параметры запроса";
+        }
+      } 
+      // Обработка других ошибок
+      else if (err.response) {
+        if (err.response.data instanceof Blob) {
+          try {
+            const text = await err.response.data.text();
+            try {
+              const json = JSON.parse(text);
+              detailedMsg = json.detail || text;
+            } catch {
+              detailedMsg = text || `Ошибка ${err.response.status}`;
+            }
+          } catch {
+            detailedMsg = `Ошибка ${err.response.status}`;
+          }
+        } else {
+          detailedMsg = err.response.data?.detail || `Ошибка ${err.response.status}`;
         }
       } else if (err.code === 'ECONNABORTED') {
-        errorMsg = 'Таймаут соединения'
+        detailedMsg = 'Таймаут соединения';
       } else if (err.message.includes('Network')) {
-        errorMsg = 'Сетевая ошибка'
+        detailedMsg = 'Сетевая ошибка';
       } else {
-        errorMsg = err.message || 'Неизвестная ошибка'
+        detailedMsg = err.message || 'Неизвестная ошибка';
       }
       
-      setStatus(errorMsg)
-      setProgress(0)
-      alert(errorMsg)
+      errorMsg = detailedMsg;
+      setStatus(errorMsg);
+      setProgress(0);
+      
+      // Показываем подробное сообщение об ошибке
+      alert(`Ошибка: ${errorMsg}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div
@@ -221,6 +252,8 @@ export default function App() {
                       placeholder="00:00"
                       value={trimStart}
                       onChange={e => setTrimStart(e.target.value)}
+                      pattern="\d{1,2}:\d{2}"
+                      title="Формат: ММ:СС (например: 00:15)"
                     />
                     <span className="input-group-text">До</span>
                     <input
@@ -229,6 +262,8 @@ export default function App() {
                       placeholder="00:30"
                       value={trimEnd}
                       onChange={e => setTrimEnd(e.target.value)}
+                      pattern="\d{1,2}:\d{2}"
+                      title="Формат: ММ:СС (например: 00:30)"
                     />
                     <span className="input-group-text">(ММ:СС)</span>
                   </div>
@@ -261,5 +296,5 @@ export default function App() {
         </form>
       </div>
     </div>
-  )
+  );
 }
