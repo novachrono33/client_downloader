@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 class DownloadRequest(BaseModel):
     url: str
     cookies: str = None
+    quality: str = "192"  # Качество по умолчанию (битрейт в кбит/с)
+    format: str = "mp3"   # Формат по умолчанию
+    eq_preset: str = None # Пресет эквалайзера
+    volume: float = 1.0   # Уровень громкости (1.0 = 100%)
+    trim: str = None      # Обрезка трека (формат "start-end")
 
 app = FastAPI()
 
@@ -36,13 +41,44 @@ def sanitize_filename(name: str) -> str:
 
 def convert_to_netscape_format(cookie_str: str) -> str:
     """Конвертирует строку cookies в формат Netscape"""
+    if not cookie_str:
+        return ""
+    
     lines = ["# Netscape HTTP Cookie File"]
     for cookie in cookie_str.split('; '):
         if '=' in cookie:
             name, value = cookie.split('=', 1)
             # Формат: domain access_flag path secure_flag expiration name value
-            lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name}\t{value}")
+            lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
     return "\n".join(lines)
+
+def get_ffmpeg_args(req: DownloadRequest) -> list:
+    """Генерирует аргументы FFmpeg на основе настроек"""
+    args = []
+    
+    # Настройка громкости
+    if req.volume != 1.0:
+        args.extend(["-af", f"volume={req.volume}"])
+    
+    # Настройки эквалайзера
+    eq_presets = {
+        "bass_boost": "equalizer=f=100:width_type=o:width=1:g=10,equalizer=f=200:width_type=o:width=1:g=5",
+        "treble_boost": "equalizer=f=3000:width_type=o:width=1:g=5,equalizer=f=10000:width_type=o:width=1:g=3",
+        "vocal_boost": "equalizer=f=300:width_type=o:width=1:g=3,equalizer=f=3000:width_type=o:width=1:g=3",
+        "flat": "equalizer=f=100:width_type=o:width=1:g=0"
+    }
+    if req.eq_preset and req.eq_preset in eq_presets:
+        args.extend(["-af", eq_presets[req.eq_preset]])
+    
+    # Обрезка трека
+    if req.trim:
+        try:
+            start, end = req.trim.split("-")
+            args.extend(["-ss", start, "-to", end])
+        except Exception:
+            logger.warning(f"Invalid trim format: {req.trim}. Skipping.")
+    
+    return args
 
 def get_metadata(url: str, cookies: str = None) -> tuple:
     """Получает метаданные трека через yt-dlp"""
@@ -54,9 +90,9 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
         "--print", "%(artist)s|||%(title)s",
     ]
     
+    cookies_path = None
     try:
         # Создаем временный файл для cookies
-        cookies_path = None
         if cookies:
             cookies_path = "cookies.txt"
             with open(cookies_path, "w", encoding="utf-8") as f:
@@ -83,10 +119,16 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
     except subprocess.CalledProcessError as e:
         logger.error(f"Ошибка получения метаданных: {e.stderr}")
         return ("Unknown", "Unknown")
+    except Exception as e:
+        logger.error(f"Metadata error: {str(e)}")
+        return ("Unknown", "Unknown")
     finally:
         # Удаляем временный файл cookies
-        if cookies and os.path.exists("cookies.txt"):
-            os.remove("cookies.txt")
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.remove(cookies_path)
+            except Exception:
+                pass
 
 @app.post("/download/")
 async def download(req: DownloadRequest):
@@ -96,12 +138,13 @@ async def download(req: DownloadRequest):
 
     # Создаем временную директорию
     temp_dir = tempfile.mkdtemp()
+    cookies_path = None
     try:
         # Получаем метаданные
         artist, title = get_metadata(req.url, req.cookies)
         
         # Формируем имя файла без дублирования
-        safe_filename = sanitize_filename(f"{artist} - {title}.mp3")
+        safe_filename = sanitize_filename(f"{artist} - {title}.{req.format}")
         output_path = os.path.join(temp_dir, safe_filename)
         
         # Для заголовка используем кодированное имя
@@ -113,13 +156,17 @@ async def download(req: DownloadRequest):
         cmd = [
             "yt-dlp",
             "-x",  # Извлечь аудио
-            "--audio-format", "mp3",
-            "--audio-quality", "192K",
+            "--audio-format", req.format,
+            "--audio-quality", req.quality,
             "-o", output_path,
         ]
         
+        # Добавляем параметры FFmpeg
+        ffmpeg_args = get_ffmpeg_args(req)
+        if ffmpeg_args:
+            cmd.extend(["--postprocessor-args", " ".join(ffmpeg_args)])
+        
         # Обработка cookies
-        cookies_path = None
         if req.cookies:
             cookies_path = "cookies.txt"
             with open(cookies_path, "w", encoding="utf-8") as f:
@@ -157,7 +204,8 @@ async def download(req: DownloadRequest):
             content = f.read()
         
         # Проверяем длительность файла
-        if len(content) < 1_000_000:  # Если файл меньше 1MB - вероятно превью
+        min_size = 500_000  # Минимальный размер для полного трека
+        if len(content) < min_size:
             logger.warning(f"Small file size detected: {len(content)} bytes. May be a preview version.")
             if req.cookies:
                 logger.warning("Cookies provided but still got small file. Check cookies validity.")
@@ -180,8 +228,11 @@ async def download(req: DownloadRequest):
         raise HTTPException(500, detail=f"Ошибка: {str(e)}")
     finally:
         # Удаляем временный файл cookies
-        if req.cookies and os.path.exists("cookies.txt"):
-            os.remove("cookies.txt")
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.remove(cookies_path)
+            except Exception:
+                pass
         
         # Очистка временных файлов
         if os.path.exists(temp_dir):

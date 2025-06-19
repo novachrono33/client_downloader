@@ -7,40 +7,62 @@ export default function App() {
   const [status, setStatus] = useState('Скачать')
   const [progress, setProgress] = useState(0)
   const [cookies, setCookies] = useState('')
+  
+  // Настройки аудио
+  const [quality, setQuality] = useState('192')
+  const [format, setFormat] = useState('mp3')
+  const [eqPreset, setEqPreset] = useState('none')
+  const [volume, setVolume] = useState(1.0)
+  const [trimStart, setTrimStart] = useState('')
+  const [trimEnd, setTrimEnd] = useState('')
 
   const download = async e => {
-  e.preventDefault()
-  setLoading(true)
-  setStatus('Загрузка...')
-  setProgress(0)
+    e.preventDefault()
+    setLoading(true)
+    setStatus('Загрузка...')
+    setProgress(0)
 
-  try {
-    const apiUrl = import.meta.env.VITE_API_URL + '/download/';
-    
-    const response = await axios.post(
-      apiUrl,
-      { url, cookies },
-      {
-        responseType: 'blob',
-        timeout: 300000,
-        onDownloadProgress: progressEvent => {
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / (progressEvent.total || 10000000)
-          )
-          setProgress(percent)
-          setStatus(`Загрузка: ${percent}%`)
+    try {
+      // Формируем параметр обрезки
+      const trim = trimStart && trimEnd ? `${trimStart}-${trimEnd}` : null
+      
+      // Используем переменную окружения для URL
+      const apiUrl = import.meta.env.VITE_API_URL + '/download/'
+      
+      const response = await axios.post(
+        apiUrl,
+        { 
+          url, 
+          cookies,
+          quality,
+          format,
+          eq_preset: eqPreset === 'none' ? null : eqPreset,
+          volume,
+          trim
+        },
+        {
+          responseType: 'blob',
+          timeout: 300000,
+          onDownloadProgress: progressEvent => {
+            const percent = Math.round(
+              (progressEvent.loaded * 100) / (progressEvent.total || 10000000)
+            );
+            setProgress(percent);
+            setStatus(`Загрузка: ${percent}%`);
+          }
         }
-      }
-    )
+      )
 
-      const contentDisposition = response.headers['content-disposition'] || '';
-      const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-      let filename = 'track.mp3';
+      // Получаем имя файла из заголовков
+      const contentDisposition = response.headers['content-disposition'] || ''
+      const filenameMatch = contentDisposition.match(/filename="(.+)"/)
+      let filename = 'track.mp3'
       if (filenameMatch) {
           // Декодируем URL-кодированное имя файла
-          filename = decodeURIComponent(filenameMatch[1]);
+          filename = decodeURIComponent(filenameMatch[1])
       }
 
+      // Создаем и скачиваем файл
       const blob = new Blob([response.data], { type: 'audio/mpeg' })
       const downloadUrl = URL.createObjectURL(blob)
       
@@ -50,6 +72,7 @@ export default function App() {
       document.body.appendChild(link)
       link.click()
       
+      // Очистка
       setTimeout(() => {
         document.body.removeChild(link)
         URL.revokeObjectURL(downloadUrl)
@@ -61,6 +84,7 @@ export default function App() {
       let errorMsg = 'Ошибка'
       
       if (err.response) {
+        // Обработка ошибок сервера
         if (err.response.data instanceof Blob) {
           const text = await err.response.data.text()
           try {
@@ -108,6 +132,7 @@ export default function App() {
             />
             <div className="form-text">Пример: https://music.yandex.ru/track/12345678</div>
           </div>
+          
           <div className="mb-3">
             <label className="form-label">Cookies (необязательно)</label>
             <textarea
@@ -121,9 +146,102 @@ export default function App() {
               Для скачивания полных версий требуется авторизация Яндекс.Музыки
             </div>
           </div>
+          
+          <div className="card mt-3 mb-3">
+            <div className="card-header">Настройки аудио</div>
+            <div className="card-body">
+              <div className="row">
+                <div className="col-md-6 mb-3">
+                  <label className="form-label">Качество</label>
+                  <select 
+                    className="form-select"
+                    value={quality}
+                    onChange={e => setQuality(e.target.value)}
+                  >
+                    <option value="128">128 кбит/с</option>
+                    <option value="192">192 кбит/с (рекомендуется)</option>
+                    <option value="256">256 кбит/с</option>
+                    <option value="320">320 кбит/с (максимальное)</option>
+                  </select>
+                </div>
+                
+                <div className="col-md-6 mb-3">
+                  <label className="form-label">Формат</label>
+                  <select 
+                    className="form-select"
+                    value={format}
+                    onChange={e => setFormat(e.target.value)}
+                  >
+                    <option value="mp3">MP3 (совместимый)</option>
+                    <option value="aac">AAC (лучшее качество)</option>
+                    <option value="flac">FLAC (без потерь)</option>
+                    <option value="opus">Opus (современный)</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="row">
+                <div className="col-md-6 mb-3">
+                  <label className="form-label">Эквалайзер</label>
+                  <select 
+                    className="form-select"
+                    value={eqPreset}
+                    onChange={e => setEqPreset(e.target.value)}
+                  >
+                    <option value="none">Без изменений</option>
+                    <option value="bass_boost">Усилить басы</option>
+                    <option value="treble_boost">Усилить высокие</option>
+                    <option value="vocal_boost">Усилить вокал</option>
+                    <option value="flat">Плоский (для студии)</option>
+                  </select>
+                </div>
+                
+                <div className="col-md-6 mb-3">
+                  <label className="form-label">Громкость: {(volume * 100).toFixed(0)}%</label>
+                  <input 
+                    type="range" 
+                    className="form-range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.1"
+                    value={volume}
+                    onChange={e => setVolume(parseFloat(e.target.value))}
+                  />
+                </div>
+              </div>
+              
+              <div className="row">
+                <div className="col-md-12">
+                  <label className="form-label">Обрезка трека (для рингтонов)</label>
+                  <div className="input-group mb-3">
+                    <span className="input-group-text">От</span>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="00:00"
+                      value={trimStart}
+                      onChange={e => setTrimStart(e.target.value)}
+                    />
+                    <span className="input-group-text">До</span>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="00:30"
+                      value={trimEnd}
+                      onChange={e => setTrimEnd(e.target.value)}
+                    />
+                    <span className="input-group-text">(ММ:СС)</span>
+                  </div>
+                  <div className="form-text">Оставьте пустым для полной версии трека</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <button type="submit" className="btn btn-primary w-100" disabled={loading}>
             {status}
           </button>
+          
           {loading && (
             <div className="mt-3">
               <div className="progress">
