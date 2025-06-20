@@ -100,7 +100,7 @@ def get_ffmpeg_args(req: DownloadRequest) -> list:
     
     # Настройка громкости
     if req.volume and req.volume != 1.0:
-        args.extend(["-af", f"volume={req.volume}"])
+        args.append(f"volume={req.volume}")
     
     # Настройки эквалайзера
     eq_presets = {
@@ -110,21 +110,28 @@ def get_ffmpeg_args(req: DownloadRequest) -> list:
         "flat": "equalizer=f=100:width_type=o:width=1:g=0"
     }
     if req.eq_preset and req.eq_preset in eq_presets:
-        args.extend(["-af", eq_presets[req.eq_preset]])
+        args.append(eq_presets[req.eq_preset])
     
     # Обрезка трека
+    trim_args = []
     if req.trim:
         try:
             start, end = req.trim.split("-")
             # Проверка формата времени
             if re.match(r"^\d{1,2}:\d{2}$", start) and re.match(r"^\d{1,2}:\d{2}$", end):
-                args.extend(["-ss", start, "-to", end])
+                trim_args.extend(["-ss", start, "-to", end])
             else:
                 logger.warning(f"Неверный формат времени для обрезки: {req.trim}")
         except Exception:
             logger.warning(f"Ошибка при разборе параметра обрезки: {req.trim}")
     
-    return args
+    # Объединяем все фильтры
+    filters = []
+    if args:
+        filters.append("-af")
+        filters.append(",".join(args))
+    
+    return trim_args + filters
 
 def get_metadata(url: str, cookies: str = None) -> tuple:
     """Получает метаданные трека через yt-dlp"""
