@@ -6,6 +6,7 @@ import time
 import urllib.parse
 import logging
 import shutil
+import json
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -94,13 +95,13 @@ def convert_to_netscape_format(cookie_str: str) -> str:
                 lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
     return "\n".join(lines)
 
-def get_ffmpeg_args(req: DownloadRequest) -> list:
-    """Генерирует аргументы FFmpeg на основе настроек"""
-    args = []
+def get_ffmpeg_filters(req: DownloadRequest) -> str:
+    """Генерирует фильтры FFmpeg на основе настроек"""
+    filters = []
     
     # Настройка громкости
     if req.volume and req.volume != 1.0:
-        args.append(f"volume={req.volume}")
+        filters.append(f"volume={req.volume}")
     
     # Настройки эквалайзера
     eq_presets = {
@@ -110,28 +111,9 @@ def get_ffmpeg_args(req: DownloadRequest) -> list:
         "flat": "equalizer=f=100:width_type=o:width=1:g=0"
     }
     if req.eq_preset and req.eq_preset in eq_presets:
-        args.append(eq_presets[req.eq_preset])
+        filters.append(eq_presets[req.eq_preset])
     
-    # Обрезка трека
-    trim_args = []
-    if req.trim:
-        try:
-            start, end = req.trim.split("-")
-            # Проверка формата времени
-            if re.match(r"^\d{1,2}:\d{2}$", start) and re.match(r"^\d{1,2}:\d{2}$", end):
-                trim_args.extend(["-ss", start, "-to", end])
-            else:
-                logger.warning(f"Неверный формат времени для обрезки: {req.trim}")
-        except Exception:
-            logger.warning(f"Ошибка при разборе параметра обрезки: {req.trim}")
-    
-    # Объединяем все фильтры
-    filters = []
-    if args:
-        filters.append("-af")
-        filters.append(",".join(args))
-    
-    return trim_args + filters
+    return ",".join(filters) if filters else None
 
 def get_metadata(url: str, cookies: str = None) -> tuple:
     """Получает метаданные трека через yt-dlp"""
@@ -183,6 +165,56 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
             except Exception:
                 pass
 
+def apply_audio_processing(input_path: str, output_path: str, req: DownloadRequest):
+    """Применяет обработку звука с помощью FFmpeg"""
+    ffmpeg_cmd = ["ffmpeg", "-y", "-i", input_path]
+    
+    # Добавляем параметры обрезки
+    trim_args = []
+    if req.trim:
+        try:
+            start, end = req.trim.split("-")
+            # Проверка формата времени
+            if re.match(r"^\d{1,2}:\d{2}$", start) and re.match(r"^\d{1,2}:\d{2}$", end):
+                trim_args.extend(["-ss", start, "-to", end])
+            else:
+                logger.warning(f"Неверный формат времени для обрезки: {req.trim}")
+        except Exception as e:
+            logger.warning(f"Ошибка при разборе параметра обрезки: {req.trim} - {str(e)}")
+    
+    # Добавляем фильтры
+    ffmpeg_filters = get_ffmpeg_filters(req)
+    if ffmpeg_filters:
+        ffmpeg_cmd.extend(["-af", ffmpeg_filters])
+    
+    # Определение кодека и битрейта
+    codec_map = {
+        "mp3": "libmp3lame",
+        "aac": "aac",
+        "flac": "flac",
+        "wav": "pcm_s16le",
+        "opus": "libopus",
+        "m4a": "aac"
+    }
+    
+    ffmpeg_cmd.extend(trim_args)
+    ffmpeg_cmd.extend([
+        "-c:a", codec_map.get(req.format, "libmp3lame"),
+        "-b:a", f"{req.quality}k",
+        output_path
+    ])
+    
+    logger.info(f"Running FFmpeg: {' '.join(ffmpeg_cmd)}")
+    result = subprocess.run(
+        ffmpeg_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True
+    )
+    
+    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        raise Exception("FFmpeg не создал выходной файл")
+
 @app.post("/download/")
 async def download(req: DownloadRequest):
     logger.info(f"Получен запрос на скачивание: {req.url}")
@@ -200,6 +232,7 @@ async def download(req: DownloadRequest):
         
         # Формируем имя файла без дублирования
         safe_filename = sanitize_filename(f"{artist} - {title}.{req.format}")
+        original_path = os.path.join(temp_dir, f"original_{safe_filename}")
         output_path = os.path.join(temp_dir, safe_filename)
         
         # Для заголовка используем кодированное имя
@@ -207,19 +240,13 @@ async def download(req: DownloadRequest):
         
         logger.info(f"Starting download: {safe_filename}")
         
-        # Команда для скачивания и конвертации
+        # Команда для скачивания в максимальном качестве
         cmd = [
             "yt-dlp",
             "-x",  # Извлечь аудио
-            "--audio-format", req.format,
-            "--audio-quality", req.quality,
-            "-o", output_path,
+            "--audio-format", "best",  # Скачиваем в лучшем качестве
+            "-o", original_path,
         ]
-        
-        # Добавляем параметры FFmpeg
-        ffmpeg_args = get_ffmpeg_args(req)
-        if ffmpeg_args:
-            cmd.extend(["--postprocessor-args", " ".join(ffmpeg_args)])
         
         # Обработка cookies
         if req.cookies:
@@ -230,35 +257,39 @@ async def download(req: DownloadRequest):
         
         cmd.append(req.url)
         
-        # Запускаем процесс и ждем завершения
-        logger.info(f"Running command: {' '.join(cmd)}")
-        process = subprocess.run(
+        # Запускаем процесс скачивания
+        logger.info(f"Running download command: {' '.join(cmd)}")
+        download_process = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=True
         )
         
-        # Убедимся, что файл полностью записан
+        # Убедимся, что файл скачан
         max_attempts = 10
         file_ready = False
         for i in range(max_attempts):
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                file_size = os.path.getsize(output_path)
-                logger.info(f"File found: {output_path}, size: {file_size} bytes")
+            if os.path.exists(original_path) and os.path.getsize(original_path) > 0:
+                file_size = os.path.getsize(original_path)
+                logger.info(f"Original file found: {original_path}, size: {file_size} bytes")
                 file_ready = True
                 break
-            logger.info(f"Waiting for file... (attempt {i+1}/{max_attempts})")
+            logger.info(f"Waiting for original file... (attempt {i+1}/{max_attempts})")
             time.sleep(0.5)
         
         if not file_ready:
-            raise Exception("Файл не был создан или пуст")
-
-        # Читаем файл в память
+            raise Exception("Оригинальный файл не был скачан")
+        
+        # Применяем обработку звука
+        logger.info("Applying audio processing...")
+        apply_audio_processing(original_path, output_path, req)
+        
+        # Читаем обработанный файл
         with open(output_path, 'rb') as f:
             content = f.read()
         
-        # Проверяем длительность файла
+        # Проверяем размер файла
         min_size = 500_000  # Минимальный размер для полного трека
         if len(content) < min_size:
             logger.warning(f"Small file size detected: {len(content)} bytes. May be a preview version.")
@@ -275,9 +306,9 @@ async def download(req: DownloadRequest):
         )
 
     except subprocess.CalledProcessError as e:
-        error_msg = f"yt-dlp error: {e.stderr.decode('utf-8') if e.stderr else str(e)}"
-        logger.error(error_msg)
-        raise HTTPException(500, detail=error_msg)
+        error_details = e.stderr.decode('utf-8') if e.stderr else str(e)
+        logger.error(f"Process error: {error_details}")
+        raise HTTPException(500, detail=f"Ошибка обработки: {error_details}")
     except Exception as e:
         logger.error(f"General error: {str(e)}")
         raise HTTPException(500, detail=f"Ошибка: {str(e)}")

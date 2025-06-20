@@ -201,7 +201,7 @@ export default function App() {
             <div className="card mt-3 mb-3 settings-card">
               <div className="card-header">Настройки аудио</div>
               <div className="card-body">
-                <div className="row">
+                <div className="row align-items-center"> {/* Добавлено выравнивание по центру */}
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Качество</label>
                     <select 
@@ -231,7 +231,7 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="row">
+                <div className="row align-items-center"> {/* Добавлено выравнивание по центру */}
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Эквалайзер</label>
                     <select 
@@ -251,7 +251,7 @@ export default function App() {
                     <label className="form-label">Громкость: {(volume * 100).toFixed(0)}%</label>
                     <input 
                       type="range" 
-                      className="form-range"
+                      className="form-range volume-slider"
                       min="0.5"
                       max="2.0"
                       step="0.1"
@@ -327,7 +327,7 @@ export default function App() {
           padding: 20px;
           background-color: ${darkMode ? '#121212' : '#f8f9fa'};
           transition: background-color 0.3s ease-in-out;
-          font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+          font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
         }
         
         .main-card {
@@ -388,7 +388,7 @@ export default function App() {
           box-shadow: ${darkMode ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.1)'};
         }
         
-        .form-control, .form-select {
+        .form-control, .form-select, .volume-slider {
           background-color: ${darkMode ? '#2d2d2d' : '#fff'};
           color: ${darkMode ? '#f0f0f0' : '#212529'};
           border-color: ${darkMode ? '#444' : '#ced4da'};
@@ -398,7 +398,19 @@ export default function App() {
           max-width: 100%;
         }
         
-        .form-control:focus, .form-select:focus {
+        .form-control::placeholder {
+          color: ${darkMode ? '#888' : '#6c757d'} !important;
+        }
+        
+        .form-select {
+          appearance: none;
+          background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='${darkMode ? '%23f0f0f0' : '%23212529'}' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+          background-repeat: no-repeat;
+          background-position: right 0.75rem center;
+          background-size: 16px 12px;
+        }
+        
+        .form-control:focus, .form-select:focus, .volume-slider:focus {
           background-color: ${darkMode ? '#2d2d2d' : '#fff'};
           color: ${darkMode ? '#fff' : '#212529'};
           border-color: ${darkMode ? '#666' : '#86b7fe'};
@@ -416,6 +428,12 @@ export default function App() {
           font-weight: 500;
           margin-bottom: 0.5rem;
           color: ${darkMode ? '#e0e0e0' : '#495057'};
+        }
+        
+        .input-group-text {
+          background-color: ${darkMode ? '#333' : '#e9ecef'};
+          color: ${darkMode ? '#e0e0e0' : '#495057'};
+          border-color: ${darkMode ? '#444' : '#ced4da'};
         }
         
         .download-btn {
@@ -459,10 +477,29 @@ export default function App() {
           transition: width 0.3s ease-out;
         }
         
-        .input-group-text {
-          background-color: ${darkMode ? '#333' : '#e9ecef'};
-          color: ${darkMode ? '#ccc' : '#495057'};
-          border-color: ${darkMode ? '#444' : '#ced4da'};
+        /* Стили для ползунка громкости */
+        .volume-slider {
+          width: 100%;
+          padding: 0.5rem 0; /* Увеличиваем отступы по вертикали для выравнивания */
+        }
+        
+        /* Стилизация ползунка для разных браузеров */
+        .volume-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: ${darkMode ? '#0d6efd' : '#0d6efd'};
+          cursor: pointer;
+        }
+        
+        .volume-slider::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: ${darkMode ? '#0d6efd' : '#0d6efd'};
+          cursor: pointer;
         }
         
         @keyframes fadeIn {
