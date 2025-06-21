@@ -81,18 +81,30 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', "_", name)
 
 def convert_to_netscape_format(cookie_str: str) -> str:
-    """Конвертирует строку cookies в формат Netscape"""
+    """Конвертирует строку cookies в формат Netscape из заголовка Cookie"""
     if not cookie_str:
         return ""
     
     lines = ["# Netscape HTTP Cookie File"]
-    for cookie in cookie_str.split('; '):
-        if '=' in cookie:
-            parts = cookie.split('=', 1)
-            if len(parts) == 2:
-                name, value = parts
-                # Формат: domain access_flag path secure_flag expiration name value
-                lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
+    
+    # Разбиваем на отдельные куки
+    cookies = cookie_str.split(';')
+    
+    for cookie in cookies:
+        cookie = cookie.strip()
+        if not cookie:
+            continue
+            
+        # Разделяем имя и значение
+        parts = cookie.split('=', 1)
+        if len(parts) != 2:
+            continue
+            
+        name, value = parts
+        
+        # Формат: domain access_flag path secure_flag expiration name value
+        lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
+    
     return "\n".join(lines)
 
 def get_ffmpeg_filters(req: DownloadRequest) -> str:

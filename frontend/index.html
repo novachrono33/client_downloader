@@ -5,40 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Client Downloader</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-      * {
-        box-sizing: border-box;
-        transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
-      }
-      
+      /* Минимальные базовые стили для тел документа */
       body {
         margin: 0;
+        padding: 0;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
           'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
           sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         line-height: 1.6;
+        height: 100%;
+        width: 100%;
       }
       
-      body.dark-theme {
-        background-color: #121212;
-        color: #f0f0f0;
-      }
-      
-      body.light-theme {
-        background-color: #f8f9fa;
-        color: #212529;
+      #root {
+        height: 100%;
+        width: 100%;
       }
       
       /* Анимации */
       @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      
-      .fade-in {
-        animation: fadeIn 0.5s ease-out;
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
       }
     </style>
   </head>

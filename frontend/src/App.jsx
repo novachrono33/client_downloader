@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import './App.css';
 
 export default function App() {
   const [url, setUrl] = useState('');
@@ -8,6 +9,8 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [cookies, setCookies] = useState('');
   const [darkMode, setDarkMode] = useState(true);
+  const [showAuthFrame, setShowAuthFrame] = useState(false);
+  const [authStatus, setAuthStatus] = useState('');
   
   // Настройки аудио
   const [quality, setQuality] = useState('192');
@@ -27,6 +30,28 @@ export default function App() {
       document.body.classList.remove('dark-theme');
     }
   }, [darkMode]);
+
+  // Обработчик сообщений от iframe авторизации
+  useEffect(() => {
+    const handleMessage = (event) => {
+      // Проверяем origin для безопасности
+      if (event.origin !== window.location.origin) return;
+    
+      if (event.data.type === "AUTH_SUCCESS") {
+        setCookies(event.data.cookies);
+        setShowAuthFrame(false);
+        setAuthStatus('Авторизация успешна! Cookies получены.');
+      } else if (event.data.type === "AUTH_FAILED") {
+        const errorMsg = event.data.message || 'Ошибка авторизации';
+        setAuthStatus(`Ошибка: ${errorMsg}. Пожалуйста, попробуйте снова.`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
 
   const download = async (e) => {
     e.preventDefault();
@@ -155,6 +180,98 @@ export default function App() {
     }
   };
 
+  const AuthFrame = () => {
+    const [cookiesHeader, setCookiesHeader] = useState('');
+    
+    const handleApplyCookies = () => {
+      if (cookiesHeader.trim()) {
+        window.postMessage({
+          type: "AUTH_SUCCESS",
+          cookies: cookiesHeader
+        }, window.location.origin);
+      } else {
+        window.postMessage({
+          type: "AUTH_FAILED",
+          message: "Введите значение заголовка Cookie"
+        }, window.location.origin);
+      }
+    };
+
+    const copyExample = () => {
+      navigator.clipboard.writeText("Session_id=3:1662470624:5.0:1234567890|123456789.0.0.0|:0; yandexuid=1234567890123456789; yandex_login=example@yandex.ru;");
+      alert("Пример скопирован в буфер обмена!");
+    };
+
+    return (
+      <div className="auth-frame-container">
+        <div className="step">
+          <span className="step-number">1</span>
+          <strong>Авторизуйтесь на Яндекс.Музыке</strong>
+          <p>
+            Откройте <a 
+              href="https://music.yandex.ru" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary"
+            >
+              Яндекс.Музыку
+            </a> в новой вкладке и войдите в свой аккаунт
+          </p>
+        </div>
+        
+        <div className="step">
+          <span className="step-number">2</span>
+          <strong>Скопируйте заголовок Cookie</strong>
+          <p className="mb-1">
+            После авторизации:
+            <ol className="mt-1">
+              <li>Откройте инструменты разработчика (F12)</li>
+              <li>Перейдите на вкладку "Network" (Сеть)</li>
+              <li>Обновите страницу Яндекс.Музыки (F5)</li>
+              <li>Выберите любой запрос к music.yandex.ru</li>
+              <li>В разделе "Headers" → "Request Headers" найдите "Cookie"</li>
+              <li>Скопируйте <strong>всё</strong> значение этого заголовка</li>
+            </ol>
+          </p>
+          <button 
+            className="btn btn-sm btn-outline-secondary copy-example-btn"
+            onClick={copyExample}
+          >
+            Скопировать пример формата
+          </button>
+        </div>
+        
+        <div className="step">
+          <span className="step-number">3</span>
+          <strong>Вставьте значение Cookie</strong>
+          <textarea
+            className="form-control mt-2"
+            rows="4"
+            placeholder="Session_id=...; yandexuid=...; ..."
+            value={cookiesHeader}
+            onChange={e => setCookiesHeader(e.target.value)}
+          />
+          <button 
+            className="auth-btn"
+            onClick={handleApplyCookies}
+          >
+            Применить cookies
+          </button>
+        </div>
+        
+        <div className="auth-tip">
+          <strong>Совет:</strong> Для быстрого поиска:
+          <ul>
+            <li>Используйте поиск (Ctrl+F) по слову "Cookie"</li>
+            <li>Ищите запросы к доменам: music.yandex.ru, api.music.yandex.ru</li>
+            <li>Должны присутствовать ключи: Session_id, yandexuid</li>
+            <li>Значение должно начинаться примерно так: Session_id=...</li>
+          </ul>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app-container">
       <div className="card main-card">
@@ -185,23 +302,53 @@ export default function App() {
             </div>
             
             <div className="mb-3">
-              <label className="form-label">Cookies (необязательно)</label>
-              <textarea
-                className="form-control"
-                value={cookies}
-                onChange={e => setCookies(e.target.value)}
-                placeholder="Введите cookies для полных версий"
-                rows="2"
-              />
+              <label className="form-label">
+                Авторизация Яндекс.Музыки
+              </label>
+              
+              <div className="d-flex gap-2 mb-2">
+                {cookies ? (
+                  <>
+                    <button 
+                      className="btn btn-success"
+                      disabled
+                    >
+                      <i className="bi bi-check-circle"></i> Авторизовано
+                    </button>
+                    <button 
+                      className="btn btn-outline-danger"
+                      onClick={() => setCookies('')}
+                    >
+                      <i className="bi bi-x-circle"></i> Выйти
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={() => setShowAuthFrame(true)}
+                    disabled={showAuthFrame}
+                  >
+                    <i className="bi bi-music-note"></i> Авторизоваться
+                  </button>
+                )}
+              </div>
+              
+              {authStatus && (
+                <div className={`alert ${cookies ? 'alert-success' : 'alert-danger'}`}>
+                  {authStatus}
+                </div>
+              )}
+              
               <div className="form-text">
-                Для скачивания полных версий требуется авторизация Яндекс.Музыки
+                Требуется для скачивания полных версий треков
               </div>
             </div>
             
             <div className="card mt-3 mb-3 settings-card">
               <div className="card-header">Настройки аудио</div>
               <div className="card-body">
-                <div className="row align-items-center"> {/* Добавлено выравнивание по центру */}
+                <div className="row align-items-center">
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Качество</label>
                     <select 
@@ -231,7 +378,7 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="row align-items-center"> {/* Добавлено выравнивание по центру */}
+                <div className="row align-items-center">
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Эквалайзер</label>
                     <select 
@@ -296,223 +443,39 @@ export default function App() {
             <button type="submit" className="btn btn-primary w-100 download-btn" disabled={loading}>
               {status}
             </button>
-            
-            {loading && (
-              <div className="mt-3">
-                <div className="progress">
-                  <div 
-                    className="progress-bar progress-bar-striped progress-bar-animated" 
-                    role="progressbar"
-                    style={{ width: `${progress}%` }}
-                    aria-valuenow={progress}
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                  >
-                    {progress}%
-                  </div>
-                </div>
-              </div>
-            )}
           </form>
         </div>
       </div>
       
-      <style jsx>{`
-        .app-container {
-          min-height: 100vh;
-          width: 100vw;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 20px;
-          background-color: ${darkMode ? '#121212' : '#f8f9fa'};
-          transition: background-color 0.3s ease-in-out;
-          font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
-        }
-        
-        .main-card {
-          width: 800px;
-          max-width: 95%;
-          background-color: ${darkMode ? '#1e1e1e' : '#fff'};
-          border-color: ${darkMode ? '#333' : '#dee2e6'};
-          color: ${darkMode ? '#f0f0f0' : '#212529'};
-          box-shadow: ${darkMode ? '0 4px 20px rgba(0,0,0,0.5)' : '0 4px 12px rgba(0,0,0,0.1)'};
-          border-radius: 12px;
-          overflow: hidden;
-          transition: all 0.3s ease-in-out;
-          animation: fadeIn 0.5s ease-out;
-        }
-        
-        .card-header {
-          position: relative;
-          background-color: ${darkMode ? '#2a2a2a' : '#f8f9fa'};
-          border-color: ${darkMode ? '#444' : '#dee2e6'};
-          color: ${darkMode ? '#fff' : '#212529'};
-          padding: 1.2rem 1.5rem;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        
-        .theme-toggle-btn {
-          background: ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
-          border: none;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          font-size: 1.2rem;
-        }
-        
-        .theme-toggle-btn:hover {
-          transform: scale(1.1);
-          background: ${darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'};
-        }
-        
-        .card-body {
-          padding: 1.5rem;
-        }
-        
-        .settings-card {
-          background-color: ${darkMode ? '#252525' : '#f8f9fa'};
-          border-color: ${darkMode ? '#444' : '#dee2e6'};
-          border-radius: 8px;
-          transition: all 0.3s ease;
-        }
-        
-        .settings-card:hover {
-          box-shadow: ${darkMode ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.1)'};
-        }
-        
-        .form-control, .form-select, .volume-slider {
-          background-color: ${darkMode ? '#2d2d2d' : '#fff'};
-          color: ${darkMode ? '#f0f0f0' : '#212529'};
-          border-color: ${darkMode ? '#444' : '#ced4da'};
-          border-radius: 6px;
-          padding: 0.75rem 1rem;
-          transition: all 0.3s ease;
-          max-width: 100%;
-        }
-        
-        .form-control::placeholder {
-          color: ${darkMode ? '#888' : '#6c757d'} !important;
-        }
-        
-        .form-select {
-          appearance: none;
-          background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='${darkMode ? '%23f0f0f0' : '%23212529'}' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
-          background-repeat: no-repeat;
-          background-position: right 0.75rem center;
-          background-size: 16px 12px;
-        }
-        
-        .form-control:focus, .form-select:focus, .volume-slider:focus {
-          background-color: ${darkMode ? '#2d2d2d' : '#fff'};
-          color: ${darkMode ? '#fff' : '#212529'};
-          border-color: ${darkMode ? '#666' : '#86b7fe'};
-          box-shadow: ${darkMode ? '0 0 0 0.25rem rgba(100, 100, 100, 0.25)' : '0 0 0 0.25rem rgba(13, 110, 253, 0.25)'};
-          outline: none;
-        }
-        
-        .form-text {
-          color: ${darkMode ? '#aaa' : '#6c757d'} !important;
-          font-size: 0.85rem;
-          margin-top: 0.25rem;
-        }
-        
-        .form-label {
-          font-weight: 500;
-          margin-bottom: 0.5rem;
-          color: ${darkMode ? '#e0e0e0' : '#495057'};
-        }
-        
-        .input-group-text {
-          background-color: ${darkMode ? '#333' : '#e9ecef'};
-          color: ${darkMode ? '#e0e0e0' : '#495057'};
-          border-color: ${darkMode ? '#444' : '#ced4da'};
-        }
-        
-        .download-btn {
-          background-color: ${darkMode ? '#0d6efd' : '#0d6efd'};
-          border-color: ${darkMode ? '#0a58ca' : '#0a58ca'};
-          padding: 0.75rem;
-          font-weight: 600;
-          border-radius: 8px;
-          transition: all 0.3s ease;
-          transform: translateY(0);
-          box-shadow: ${darkMode ? '0 4px 6px rgba(0,0,0,0.2)' : '0 4px 6px rgba(0,0,0,0.1)'};
-        }
-        
-        .download-btn:hover {
-          background-color: ${darkMode ? '#0b5ed7' : '#0b5ed7'};
-          border-color: ${darkMode ? '#0a58ca' : '#0a58ca'};
-          transform: translateY(-2px);
-          box-shadow: ${darkMode ? '0 6px 8px rgba(0,0,0,0.3)' : '0 6px 8px rgba(0,0,0,0.15)'};
-        }
-        
-        .download-btn:disabled {
-          opacity: 0.7;
-          transform: none;
-          box-shadow: none;
-        }
-        
-        .download-btn:active {
-          transform: translateY(0);
-        }
-        
-        .progress {
-          background-color: ${darkMode ? '#2d2d2d' : '#e9ecef'};
-          height: 1.5rem;
-          border-radius: 8px;
-          overflow: hidden;
-          margin-top: 1rem;
-          animation: fadeIn 0.3s ease-out;
-        }
-        
-        .progress-bar {
-          transition: width 0.3s ease-out;
-        }
-        
-        /* Стили для ползунка громкости */
-        .volume-slider {
-          width: 100%;
-          padding: 0.5rem 0; /* Увеличиваем отступы по вертикали для выравнивания */
-        }
-        
-        /* Стилизация ползунка для разных браузеров */
-        .volume-slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: ${darkMode ? '#0d6efd' : '#0d6efd'};
-          cursor: pointer;
-        }
-        
-        .volume-slider::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: ${darkMode ? '#0d6efd' : '#0d6efd'};
-          cursor: pointer;
-        }
-        
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.05); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
+      {/* Модальное окно авторизации */}
+      {showAuthFrame && (
+        <div className="modal-backdrop" onClick={() => setShowAuthFrame(false)}>
+          <div className="modal-container" onClick={e => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Авторизация в Яндекс.Музыке</h5>
+                <button 
+                  type="button" 
+                  className="btn-close"
+                  onClick={() => setShowAuthFrame(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <AuthFrame />
+              </div>
+              <div className="modal-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => setShowAuthFrame(false)}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

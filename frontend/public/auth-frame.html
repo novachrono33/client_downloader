@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Авторизация Яндекс</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 500px;
+      margin: 50px auto;
+      padding: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .step {
+      margin-bottom: 20px;
+      padding: 15px;
+      border-radius: 6px;
+      background: #f9f9f9;
+    }
+    .step-number {
+      display: inline-block;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      background: #ffdb4d;
+      border-radius: 50%;
+      margin-right: 10px;
+      font-weight: bold;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: #ffdb4d;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      margin-top: 20px;
+    }
+    .btn:hover {
+      background: #ffcc00;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="step">
+      <span class="step-number">1</span>
+      <strong>Откройте Яндекс.Музыку в новой вкладке</strong>
+      <p>Авторизуйтесь под своей учетной записью</p>
+      <a href="https://music.yandex.ru" target="_blank" class="btn">
+        Перейти на Яндекс.Музыку
+      </a>
+    </div>
+    
+    <div class="step">
+      <span class="step-number">2</span>
+      <strong>После авторизации вернитесь сюда</strong>
+      <p>И нажмите кнопку ниже</p>
+      <button id="getCookiesBtn" class="btn">
+        Получить cookies
+      </button>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('getCookiesBtn').addEventListener('click', () => {
+      // Открываем Яндекс.Музыку в скрытом iframe
+      const yandexFrame = document.createElement('iframe');
+      yandexFrame.style.display = 'none';
+      yandexFrame.src = 'https://music.yandex.ru';
+      
+      yandexFrame.onload = () => {
+        try {
+          // Получаем cookies из iframe
+          const cookies = yandexFrame.contentDocument.cookie;
+          // Фильтруем только нужные куки (содержащие 'yandex' в имени)
+          const yandexCookies = cookies
+            .split(';')
+            .filter(cookie => cookie.trim().includes('yandex'))
+            .map(cookie => cookie.trim())
+            .join('; ');
+          
+          if (yandexCookies) {
+            // Отправляем cookies в родительское окно
+            window.parent.postMessage({
+              type: "AUTH_SUCCESS",
+              cookies: yandexCookies
+            }, '*');
+          } else {
+            window.parent.postMessage({
+              type: "AUTH_FAILED"
+            }, '*');
+          }
+        } catch (error) {
+          console.error('Error getting cookies:', error);
+          window.parent.postMessage({
+            type: "AUTH_FAILED"
+          }, '*');
+        }
+      };
+      
+      document.body.appendChild(yandexFrame);
+    });
+  </script>
+</body>
+</html>
