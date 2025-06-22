@@ -495,6 +495,41 @@
   font-size: 0.85rem;
 }
 
+.tabs-container {
+  display: flex;
+  gap: 5px;
+  background-color: #f5f5f5;
+  border-radius: 5px;
+  padding: 3px;
+}
+
+.tab-btn {
+  padding: 8px 15px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.tab-btn.active {
+  background-color: #0d6efd;
+  color: white;
+}
+
+.dark-theme .tabs-container {
+  background-color: #2a2a2a;
+}
+
+.dark-theme .tab-btn {
+  color: #e0e0e0;
+}
+
+.dark-theme .tab-btn.active {
+  background-color: #0a58ca;
+}
+
 @keyframes spinner-border {
   to { transform: rotate(360deg); }
 }

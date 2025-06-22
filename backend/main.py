@@ -47,6 +47,11 @@ class DownloadRequest(BaseModel):
             raise ValueError(f"Недопустимый формат. Допустимые значения: {', '.join(valid_formats)}")
         return v
 
+class RutubeDownloadRequest(BaseModel):
+    url: str
+    format: str
+    quality: Optional[str] = None
+
 app = FastAPI()
 
 # Настройка CORS
@@ -332,6 +337,92 @@ async def download(req: DownloadRequest):
             except Exception:
                 pass
         
+        # Очистка временных файлов
+        if os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+                logger.info(f"Temporary directory removed: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Error removing directory {temp_dir}: {str(e)}")
+
+@app.post("/download_rutube/")
+async def download_rutube(req: RutubeDownloadRequest):
+    logger.info(f"Получен запрос на скачивание Rutube: {req.url}")
+    
+    # Проверка URL
+    if "rutube.ru" not in req.url:
+        raise HTTPException(400, detail="Только ссылки Rutube")
+    
+    # Создаем временную директорию
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Формируем команду для yt-dlp
+        cmd = [
+            "yt-dlp",
+            "-o", f"{temp_dir}/%(title)s.%(ext)s",
+            "--no-warnings",
+        ]
+        
+        # Добавляем параметры качества
+        if req.format == "mp4" and req.quality:
+            if req.quality == "best":
+                cmd.extend(["-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"])
+            else:
+                cmd.extend(["-f", f"bestvideo[height<={req.quality.replace('p', '')}]+bestaudio/best"])
+        
+        # Для аудио
+        if req.format == "mp3":
+            cmd.extend(["-x", "--audio-format", "mp3"])
+        
+        cmd.append(req.url)
+        
+        # Запускаем процесс скачивания
+        logger.info(f"Running download command: {' '.join(cmd)}")
+        download_process = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        
+        # Находим скачанный файл
+        files = os.listdir(temp_dir)
+        if not files:
+            raise Exception("Файл не был скачан")
+        
+        output_path = os.path.join(temp_dir, files[0])
+        
+        # Определяем правильное расширение
+        if req.format == "mp3" and not output_path.endswith(".mp3"):
+            new_path = os.path.splitext(output_path)[0] + ".mp3"
+            os.rename(output_path, new_path)
+            output_path = new_path
+        
+        # Читаем файл
+        with open(output_path, 'rb') as f:
+            content = f.read()
+        
+        # Формируем имя файла
+        filename = os.path.basename(output_path)
+        encoded_filename = urllib.parse.quote(filename)
+        
+        return StreamingResponse(
+            iter([content]),
+            media_type="video/mp4" if req.format == "mp4" else "audio/mpeg",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{encoded_filename}\"",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+        
+    except subprocess.CalledProcessError as e:
+        error_details = e.stderr.decode('utf-8') if e.stderr else str(e)
+        logger.error(f"Process error: {error_details}")
+        raise HTTPException(500, detail=f"Ошибка обработки: {error_details}")
+    except Exception as e:
+        logger.error(f"General error: {str(e)}")
+        raise HTTPException(500, detail=f"Ошибка: {str(e)}")
+    finally:
         # Очистка временных файлов
         if os.path.exists(temp_dir):
             try:
