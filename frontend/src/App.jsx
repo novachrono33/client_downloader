@@ -8,7 +8,6 @@ export default function App() {
   // Общие состояния
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('Скачать');
-  const [progress, setProgress] = useState(0);
   const [darkMode, setDarkMode] = useState(true);
 
   // Состояния для Яндекс.Музыки
@@ -64,7 +63,6 @@ export default function App() {
     e.preventDefault();
     setLoading(true);
     setStatus('Загрузка...');
-    setProgress(0);
 
     try {
       // Формируем параметр обрезки
@@ -94,14 +92,7 @@ export default function App() {
         requestBody,
         {
           responseType: 'blob',
-          timeout: 300000,
-          onDownloadProgress: progressEvent => {
-            const percent = Math.round(
-              (progressEvent.loaded * 100) / (progressEvent.total || 10000000)
-            );
-            setProgress(percent);
-            setStatus(`Загрузка: ${percent}%`);
-          }
+          timeout: 300000
         }
       );
 
@@ -131,7 +122,6 @@ export default function App() {
       }, 100);
 
       setStatus(`Сохранено: ${filename}`);
-      setProgress(100);
     } catch (err) {
       console.error("Ошибка скачивания:", err);
       
@@ -178,7 +168,6 @@ export default function App() {
       
       errorMsg = detailedMsg;
       setStatus(errorMsg);
-      setProgress(0);
       
       // Показываем подробное сообщение об ошибке
       alert(`Ошибка: ${errorMsg}`);
@@ -191,7 +180,6 @@ export default function App() {
     e.preventDefault();
     setLoading(true);
     setStatus('Загрузка...');
-    setProgress(0);
 
     try {
       // Проверка URL Rutube
@@ -215,13 +203,6 @@ export default function App() {
         {
           responseType: 'blob',
           timeout: 300000,
-          onDownloadProgress: progressEvent => {
-            const percent = Math.round(
-              (progressEvent.loaded * 100) / (progressEvent.total || 10000000)
-            );
-            setProgress(percent);
-            setStatus(`Загрузка: ${percent}%`);
-          }
         }
       );
 
@@ -255,7 +236,6 @@ export default function App() {
       }, 100);
 
       setStatus(`Сохранено: ${filename}`);
-      setProgress(100);
     } catch (err) {
       console.error("Ошибка скачивания:", err);
       
@@ -288,7 +268,6 @@ export default function App() {
       
       errorMsg = detailedMsg;
       setStatus(errorMsg);
-      setProgress(0);
       
       // Показываем подробное сообщение об ошибке
       alert(`Ошибка: ${errorMsg}`);
@@ -361,28 +340,31 @@ export default function App() {
     <div className="app-container">
       <div className="card main-card">
         <div className="card-header">
-          <div className="d-flex justify-content-between align-items-center">
-            <h3 className="mb-0">Client Downloader</h3>
-            <div className="tabs-container">
+          <div className="d-flex align-items-center">
+            <h3 className="app-title">Client Downloader</h3>
+            <div className="theme-toggle-container">
               <button 
-                className={`tab-btn ${activeTab === 'yandex' ? 'active' : ''}`}
-                onClick={() => setActiveTab('yandex')}
+                className={`theme-toggle-btn ${darkMode ? 'dark' : 'light'}`}
+                onClick={() => setDarkMode(!darkMode)}
+                aria-label={darkMode ? "Переключить на светлую тему" : "Переключить на темную тему"}
               >
-                Яндекс.Музыка
-              </button>
-              <button 
-                className={`tab-btn ${activeTab === 'rutube' ? 'active' : ''}`}
-                onClick={() => setActiveTab('rutube')}
-              >
-                Rutube
+                {darkMode ? '☀️' : '🌙'}
               </button>
             </div>
+          </div>
+          
+          <div className="tabs-container">
             <button 
-              className={`theme-toggle-btn ${darkMode ? 'dark' : 'light'}`}
-              onClick={() => setDarkMode(!darkMode)}
-              aria-label={darkMode ? "Переключить на светлую тему" : "Переключить на темную тему"}
+              className={`tab-btn ${activeTab === 'yandex' ? 'active' : ''}`}
+              onClick={() => setActiveTab('yandex')}
             >
-              {darkMode ? '☀️' : '🌙'}
+              Яндекс.Музыка
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'rutube' ? 'active' : ''}`}
+              onClick={() => setActiveTab('rutube')}
+            >
+              Rutube
             </button>
           </div>
         </div>
@@ -450,7 +432,7 @@ export default function App() {
               <div className="card mt-3 mb-3 settings-card">
                 <div className="card-header">Настройки аудио</div>
                 <div className="card-body">
-                  <div className="row align-items-center">
+                  <div className="row">
                     <div className="col-md-6 mb-3">
                       <label className="form-label">Качество</label>
                       <select 
@@ -480,7 +462,7 @@ export default function App() {
                     </div>
                   </div>
                   
-                  <div className="row align-items-center">
+                  <div className="row">
                     <div className="col-md-6 mb-3">
                       <label className="form-label">Эквалайзер</label>
                       <select 
@@ -545,23 +527,6 @@ export default function App() {
               <button type="submit" className="btn btn-primary w-100 download-btn" disabled={loading}>
                 {status}
               </button>
-              
-              {loading && (
-                <div className="mt-3">
-                  <div className="progress">
-                    <div 
-                      className="progress-bar progress-bar-striped progress-bar-animated" 
-                      role="progressbar"
-                      style={{ width: `${progress}%` }}
-                      aria-valuenow={progress}
-                      aria-valuemin="0"
-                      aria-valuemax="100"
-                    >
-                      {progress}%
-                    </div>
-                  </div>
-                </div>
-              )}
             </form>
           ) : (
             <form onSubmit={downloadRutube}>
@@ -581,7 +546,7 @@ export default function App() {
               <div className="card mt-3 mb-3 settings-card">
                 <div className="card-header">Настройки скачивания</div>
                 <div className="card-body">
-                  <div className="row align-items-center">
+                  <div className="row">
                     <div className="col-md-6 mb-3">
                       <label className="form-label">Формат</label>
                       <select 
@@ -628,23 +593,6 @@ export default function App() {
               <button type="submit" className="btn btn-primary w-100 download-btn" disabled={loading}>
                 {status}
               </button>
-              
-              {loading && (
-                <div className="mt-3">
-                  <div className="progress">
-                    <div 
-                      className="progress-bar progress-bar-striped progress-bar-animated" 
-                      role="progressbar"
-                      style={{ width: `${progress}%` }}
-                      aria-valuenow={progress}
-                      aria-valuemin="0"
-                      aria-valuemax="100"
-                    >
-                      {progress}%
-                    </div>
-                  </div>
-                </div>
-              )}
             </form>
           )}
         </div>
