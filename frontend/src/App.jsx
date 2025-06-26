@@ -3,14 +3,12 @@ import axios from 'axios';
 import './App.css';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('yandex'); // 'yandex' или 'rutube'
+  const [activeTab, setActiveTab] = useState('yandex');
   
-  // Общие состояния
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('Скачать');
   const [darkMode, setDarkMode] = useState(true);
 
-  // Состояния для Яндекс.Музыки
   const [url, setUrl] = useState('');
   const [cookies, setCookies] = useState('');
   const [showAuthFrame, setShowAuthFrame] = useState(false);
@@ -22,12 +20,10 @@ export default function App() {
   const [trimStart, setTrimStart] = useState('');
   const [trimEnd, setTrimEnd] = useState('');
 
-  // Состояния для Rutube
   const [rutubeUrl, setRutubeUrl] = useState('');
   const [rutubeFormat, setRutubeFormat] = useState('mp4');
   const [rutubeQuality, setRutubeQuality] = useState('720p');
 
-  // Применяем тему при загрузке
   useEffect(() => {
     if (darkMode) {
       document.body.classList.add('dark-theme');
@@ -38,7 +34,6 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Обработчик сообщений от авторизации
   useEffect(() => {
     const handleMessage = (event) => {
       if (event.origin !== window.location.origin) return;
@@ -65,18 +60,14 @@ export default function App() {
     setStatus('Загрузка...');
 
     try {
-      // Формируем параметр обрезки
       const trim = trimStart && trimEnd ? `${trimStart}-${trimEnd}` : null;
       
-      // Проверка формата обрезки
       if (trim && !/^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(trim)) {
         throw new Error("Формат обрезки должен быть ММ:СС-ММ:СС (например: 00:15-00:30)");
       }
       
-      // Используем переменную окружения для URL
       const apiUrl = import.meta.env.VITE_API_URL + '/download/';
       
-      // Формируем тело запроса
       const requestBody = {
         url, 
         cookies: cookies || null,
@@ -96,16 +87,13 @@ export default function App() {
         }
       );
 
-      // Получаем имя файла из заголовков
       const contentDisposition = response.headers['content-disposition'] || '';
       const filenameMatch = contentDisposition.match(/filename="(.+)"/);
       let filename = 'track.mp3';
       if (filenameMatch) {
-          // Декодируем URL-кодированное имя файла
           filename = decodeURIComponent(filenameMatch[1]);
       }
 
-      // Создаем и скачиваем файл
       const blob = new Blob([response.data], { type: response.headers['content-type'] || 'audio/mpeg' });
       const downloadUrl = URL.createObjectURL(blob);
       
@@ -115,7 +103,6 @@ export default function App() {
       document.body.appendChild(link);
       link.click();
       
-      // Очистка
       setTimeout(() => {
         document.body.removeChild(link);
         URL.revokeObjectURL(downloadUrl);
@@ -128,7 +115,6 @@ export default function App() {
       let errorMsg = 'Ошибка';
       let detailedMsg = '';
       
-      // Обработка ошибок валидации (422)
       if (err.response?.status === 422) {
         detailedMsg = "Ошибка в параметрах запроса: ";
         if (err.response.data?.detail) {
@@ -141,7 +127,6 @@ export default function App() {
           detailedMsg += "Неверные параметры запроса";
         }
       } 
-      // Обработка других ошибок
       else if (err.response) {
         if (err.response.data instanceof Blob) {
           try {
@@ -169,7 +154,6 @@ export default function App() {
       errorMsg = detailedMsg;
       setStatus(errorMsg);
       
-      // Показываем подробное сообщение об ошибке
       alert(`Ошибка: ${errorMsg}`);
     } finally {
       setLoading(false);
@@ -182,15 +166,12 @@ export default function App() {
     setStatus('Загрузка...');
 
     try {
-      // Проверка URL Rutube
       if (!rutubeUrl.includes("rutube.ru")) {
         throw new Error("Пожалуйста, введите ссылку на Rutube");
       }
       
-      // Используем переменную окружения для URL
       const apiUrl = import.meta.env.VITE_API_URL + '/download_rutube/';
       
-      // Формируем тело запроса
       const requestBody = {
         url: rutubeUrl,
         format: rutubeFormat,
@@ -206,16 +187,13 @@ export default function App() {
         }
       );
 
-      // Получаем имя файла из заголовков
       const contentDisposition = response.headers['content-disposition'] || '';
       const filenameMatch = contentDisposition.match(/filename="(.+)"/);
       let filename = rutubeFormat === 'mp4' ? 'video.mp4' : 'audio.mp3';
       if (filenameMatch) {
-          // Декодируем URL-кодированное имя файла
           filename = decodeURIComponent(filenameMatch[1]);
       }
 
-      // Создаем и скачиваем файл
       const blob = new Blob([response.data], { 
         type: rutubeFormat === 'mp4' 
           ? 'video/mp4' 
@@ -229,7 +207,6 @@ export default function App() {
       document.body.appendChild(link);
       link.click();
       
-      // Очистка
       setTimeout(() => {
         document.body.removeChild(link);
         URL.revokeObjectURL(downloadUrl);
@@ -269,7 +246,6 @@ export default function App() {
       errorMsg = detailedMsg;
       setStatus(errorMsg);
       
-      // Показываем подробное сообщение об ошибке
       alert(`Ошибка: ${errorMsg}`);
     } finally {
       setLoading(false);
@@ -598,7 +574,6 @@ export default function App() {
         </div>
       </div>
       
-      {/* Модальное окно авторизации */}
       {showAuthFrame && (
         <div className="modal-backdrop" onClick={() => setShowAuthFrame(false)}>
           <div className="modal-container" onClick={e => e.stopPropagation()}>

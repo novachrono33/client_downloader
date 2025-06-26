@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, validator
 
-# Настройка логирования
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,6 @@ class RutubeDownloadRequest(BaseModel):
 
 app = FastAPI()
 
-# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -63,7 +62,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Обработчик ошибок валидации
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"Ошибка валидации: {exc.errors()}")
@@ -72,7 +70,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": [{"msg": "Ошибка валидации", "errors": exc.errors()}]},
     )
 
-# Обработчик общих исключений
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Необработанная ошибка: {str(exc)}")
@@ -92,7 +89,6 @@ def convert_to_netscape_format(cookie_str: str) -> str:
     
     lines = ["# Netscape HTTP Cookie File"]
     
-    # Разбиваем на отдельные куки
     cookies = cookie_str.split(';')
     
     for cookie in cookies:
@@ -100,14 +96,12 @@ def convert_to_netscape_format(cookie_str: str) -> str:
         if not cookie:
             continue
             
-        # Разделяем имя и значение
         parts = cookie.split('=', 1)
         if len(parts) != 2:
             continue
             
         name, value = parts
         
-        # Формат: domain access_flag path secure_flag expiration name value
         lines.append(f".yandex.ru\tTRUE\t/\tFALSE\t0\t{name.strip()}\t{value.strip()}")
     
     return "\n".join(lines)
@@ -116,11 +110,9 @@ def get_ffmpeg_filters(req: DownloadRequest) -> str:
     """Генерирует фильтры FFmpeg на основе настроек"""
     filters = []
     
-    # Настройка громкости
     if req.volume and req.volume != 1.0:
         filters.append(f"volume={req.volume}")
     
-    # Настройки эквалайзера
     eq_presets = {
         "bass_boost": "equalizer=f=100:width_type=o:width=1:g=10,equalizer=f=200:width_type=o:width=1:g=5",
         "treble_boost": "equalizer=f=3000:width_type=o:width=1:g=5,equalizer=f=10000:width_type=o:width=1:g=3",
@@ -144,7 +136,6 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
     
     cookies_path = None
     try:
-        # Создаем временный файл для cookies
         if cookies:
             cookies_path = "cookies.txt"
             with open(cookies_path, "w", encoding="utf-8") as f:
@@ -159,11 +150,9 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
         if len(parts) < 2:
             return ("Unknown", "Unknown")
         
-        # Обработка формата названия
         artist = parts[0]
         title = parts[1]
         
-        # Удаляем повторяющееся имя артиста из начала названия
         if title.startswith(artist + " - "):
             title = title[len(artist) + 3:]
         
@@ -175,7 +164,6 @@ def get_metadata(url: str, cookies: str = None) -> tuple:
         logger.error(f"Metadata error: {str(e)}")
         return ("Unknown", "Unknown")
     finally:
-        # Удаляем временный файл cookies
         if cookies_path and os.path.exists(cookies_path):
             try:
                 os.remove(cookies_path)
@@ -186,12 +174,10 @@ def apply_audio_processing(input_path: str, output_path: str, req: DownloadReque
     """Применяет обработку звука с помощью FFmpeg"""
     ffmpeg_cmd = ["ffmpeg", "-y", "-i", input_path]
     
-    # Добавляем параметры обрезки
     trim_args = []
     if req.trim:
         try:
             start, end = req.trim.split("-")
-            # Проверка формата времени
             if re.match(r"^\d{1,2}:\d{2}$", start) and re.match(r"^\d{1,2}:\d{2}$", end):
                 trim_args.extend(["-ss", start, "-to", end])
             else:
@@ -199,12 +185,10 @@ def apply_audio_processing(input_path: str, output_path: str, req: DownloadReque
         except Exception as e:
             logger.warning(f"Ошибка при разборе параметра обрезки: {req.trim} - {str(e)}")
     
-    # Добавляем фильтры
     ffmpeg_filters = get_ffmpeg_filters(req)
     if ffmpeg_filters:
         ffmpeg_cmd.extend(["-af", ffmpeg_filters])
     
-    # Определение кодека и битрейта
     codec_map = {
         "mp3": "libmp3lame",
         "aac": "aac",
@@ -236,32 +220,26 @@ def apply_audio_processing(input_path: str, output_path: str, req: DownloadReque
 async def download(req: DownloadRequest):
     logger.info(f"Получен запрос на скачивание: {req.url}")
     
-    # Проверка URL
     if "music.yandex." not in req.url:
         raise HTTPException(400, detail="Только ссылки Яндекс.Музыки")
 
-    # Создаем временную директорию
     temp_dir = tempfile.mkdtemp()
     cookies_path = None
     try:
-        # Получаем метаданные
         artist, title = get_metadata(req.url, req.cookies)
         
-        # Формируем имя файла без дублирования
         safe_filename = sanitize_filename(f"{artist} - {title}.{req.format}")
         original_path = os.path.join(temp_dir, f"original_{safe_filename}")
         output_path = os.path.join(temp_dir, safe_filename)
         
-        # Для заголовка используем кодированное имя
         encoded_filename = urllib.parse.quote(safe_filename)
         
         logger.info(f"Starting download: {safe_filename}")
         
-        # Команда для скачивания в максимальном качестве
         cmd = [
             "yt-dlp",
-            "-x",  # Извлечь аудио
-            "--audio-format", "best",  # Скачиваем в лучшем качестве
+            "-x",
+            "--audio-format", "best",
             "-o", original_path,
         ]
         
@@ -274,7 +252,6 @@ async def download(req: DownloadRequest):
         
         cmd.append(req.url)
         
-        # Запускаем процесс скачивания
         logger.info(f"Running download command: {' '.join(cmd)}")
         download_process = subprocess.run(
             cmd,
@@ -283,7 +260,6 @@ async def download(req: DownloadRequest):
             check=True
         )
         
-        # Убедимся, что файл скачан
         max_attempts = 10
         file_ready = False
         for i in range(max_attempts):
@@ -298,16 +274,13 @@ async def download(req: DownloadRequest):
         if not file_ready:
             raise Exception("Оригинальный файл не был скачан")
         
-        # Применяем обработку звука
         logger.info("Applying audio processing...")
         apply_audio_processing(original_path, output_path, req)
         
-        # Читаем обработанный файл
         with open(output_path, 'rb') as f:
             content = f.read()
         
-        # Проверяем размер файла
-        min_size = 500_000  # Минимальный размер для полного трека
+        min_size = 500_000
         if len(content) < min_size:
             logger.warning(f"Small file size detected: {len(content)} bytes. May be a preview version.")
             if req.cookies:
@@ -330,14 +303,12 @@ async def download(req: DownloadRequest):
         logger.error(f"General error: {str(e)}")
         raise HTTPException(500, detail=f"Ошибка: {str(e)}")
     finally:
-        # Удаляем временный файл cookies
         if cookies_path and os.path.exists(cookies_path):
             try:
                 os.remove(cookies_path)
             except Exception:
                 pass
         
-        # Очистка временных файлов
         if os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
@@ -349,34 +320,28 @@ async def download(req: DownloadRequest):
 async def download_rutube(req: RutubeDownloadRequest):
     logger.info(f"Получен запрос на скачивание Rutube: {req.url}")
     
-    # Проверка URL
     if "rutube.ru" not in req.url:
         raise HTTPException(400, detail="Только ссылки Rutube")
     
-    # Создаем временную директорию
     temp_dir = tempfile.mkdtemp()
     try:
-        # Формируем команду для yt-dlp
         cmd = [
             "yt-dlp",
             "-o", f"{temp_dir}/%(title)s.%(ext)s",
             "--no-warnings",
         ]
         
-        # Добавляем параметры качества
         if req.format == "mp4" and req.quality:
             if req.quality == "best":
                 cmd.extend(["-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"])
             else:
                 cmd.extend(["-f", f"bestvideo[height<={req.quality.replace('p', '')}]+bestaudio/best"])
         
-        # Для аудио
         if req.format == "mp3":
             cmd.extend(["-x", "--audio-format", "mp3"])
         
         cmd.append(req.url)
         
-        # Запускаем процесс скачивания
         logger.info(f"Running download command: {' '.join(cmd)}")
         download_process = subprocess.run(
             cmd,
@@ -385,24 +350,20 @@ async def download_rutube(req: RutubeDownloadRequest):
             check=True
         )
         
-        # Находим скачанный файл
         files = os.listdir(temp_dir)
         if not files:
             raise Exception("Файл не был скачан")
         
         output_path = os.path.join(temp_dir, files[0])
         
-        # Определяем правильное расширение
         if req.format == "mp3" and not output_path.endswith(".mp3"):
             new_path = os.path.splitext(output_path)[0] + ".mp3"
             os.rename(output_path, new_path)
             output_path = new_path
         
-        # Читаем файл
         with open(output_path, 'rb') as f:
             content = f.read()
         
-        # Формируем имя файла
         filename = os.path.basename(output_path)
         encoded_filename = urllib.parse.quote(filename)
         
@@ -423,7 +384,6 @@ async def download_rutube(req: RutubeDownloadRequest):
         logger.error(f"General error: {str(e)}")
         raise HTTPException(500, detail=f"Ошибка: {str(e)}")
     finally:
-        # Очистка временных файлов
         if os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
